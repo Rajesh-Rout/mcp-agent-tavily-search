@@ -1,65 +1,59 @@
 import os
-from dotenv import load_dotenv
+from pathlib import Path
+
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
-import sys
-from pathlib import Path
-import asyncio
 
-load_dotenv()
 
-server_path = Path("mcp_server.py").resolve()
+# Get the absolute path of MCP server
+server_path = Path("web_search_mcp.py").resolve()
 
-llm = ChatOpenAI(
-    model = "gpt-4o-mini",
-    temperature = 0.1
-)
 
+# MCP Client
 client = MultiServerMCPClient(
     {
-        "web_search":{
-            "transport":"stdio",
-            "command":sys.executable,
-            "args":[str(server_path)]
-
+        "web_search_server": {
+            "transport": "stdio",
+            "command": "python",
+            "args": [str(server_path)]
         }
     }
 )
 
-SYSTEM_PROMPT = (
-    "You are a web search assistant. "
-    "Always use the web_search tool to answer the user's question. "
-    "Base your answer only on the search results. "
-    "If the results don't contain the answer, say you could not find it."
-)
-# create the main fuction
-async def main():
 
-    # get the tools from mcp server
+# LLM
+llm = ChatOpenAI(
+    model="gpt-4o-mini",
+    temperature=0
+)
+
+
+async def create_web_agent():
+
+    # Retrieve tools from MCP server
     tools = await client.get_tools()
 
-    print("Available MCP tools:")
+    print("MCP tools loaded:")
     for tool in tools:
         print(tool.name)
 
-    # create a AI agent with mcp tools
+    # Create agent
     agent = create_agent(
-        model = llm,
-        tools = tools,
-        system_prompt = SYSTEM_PROMPT
+        model=llm,
+        tools=tools,
+        system_prompt="""
+        You are a web research AI assistant.
 
+        Use the web_search tool for current, recent,
+        or internet-based information.
+
+        When you search:
+        1. Analyze the search results.
+        2. Prefer reliable information.
+        3. Do not invent facts.
+        4. Give a clear and structured answer.
+        """
     )
 
-    query = "What are the latest developments in Agentic AI?"
-
-    response = await agent.ainvoke(
-        {
-            "messages":{"role":"user","content":query}
-        }
-    )
-
-    print(response['messages'][-1].content)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    return agent
